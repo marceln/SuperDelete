@@ -25,21 +25,25 @@ namespace SuperDelete
     {
         public static void Main(string[] args)
         {
-            if (!args.Any())
+            var parsedArgs = CmdLineArgsParser.Parse(args);
+            if (!args.Any() || string.IsNullOrEmpty(parsedArgs.FileName))
             {
                 UsageInformation.Print();
                 return;
             }
 
-            var fileName = args.FirstOrDefault();
-            Console.WriteLine(Resources.ConfirmationLine, fileName);
-            var keyInfo = Console.ReadKey();
-            if (keyInfo.Key != ConsoleKey.Y && keyInfo.Key != ConsoleKey.Enter)
+            //If silent mode is not specified
+            if (!parsedArgs.SilentModeEnabled)
             {
-                return;
+                Console.WriteLine(Resources.ConfirmationLine, parsedArgs.FileName);
+                var keyInfo = Console.ReadKey();
+                if (keyInfo.Key != ConsoleKey.Y && keyInfo.Key != ConsoleKey.Enter)
+                {
+                    return;
+                }
             }
 
-            if (!FileDeleter.Delete(fileName))
+            if (!FileDeleter.Delete(parsedArgs.FileName))
             {
                 var lastError = Marshal.GetLastWin32Error();
                 Console.WriteLine();

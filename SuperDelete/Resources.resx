@@ -121,7 +121,7 @@
     <value>Are you sure you want to delete file/folder at path {0}? (Y/n)</value>
   </data>
   <data name="UsageLine" xml:space="preserve">
-    <value>Usage: SuperDelete.exe fullFileOrFolderPath.</value>
+    <value>Usage: SuperDelete.exe [--silent|-s] fullFileOrFolderPath.</value>
   </data>
   <data name="VersionLine" xml:space="preserve">
     <value>SuperDelete version {0}.</value>

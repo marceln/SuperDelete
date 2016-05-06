@@ -70,7 +70,7 @@ namespace SuperDelete {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Usage: SuperDelete.exe fullFileOrFolderPath..
+        ///   Looks up a localized string similar to Usage: SuperDelete.exe [--silent|-s] fullFileOrFolderPath..
         /// </summary>
         internal static string UsageLine {
             get {
