@@ -12,6 +12,7 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
+using Microsoft.Win32.SafeHandles;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -26,89 +27,131 @@ namespace SuperDelete.Internal
     {
         private const string FileNamePrefix = "\\\\?\\";
 
-        public static bool Delete(string path)
+        public static void Delete(string path, bool bypassAcl)
         {
             uint fileAttrs = NativeMethods.GetFileAttributesW(EnsureFileName(path));
             if ((fileAttrs & (uint)FileAttributes.Directory) == (uint)FileAttributes.Directory)
             {
-                return DeleteFolder(path);
+                DeleteFolder(path, bypassAcl);
             }
             else
             {
-                return DeleteSingleFile(path);
+                DeleteSingleFile(path, bypassAcl);
             }
         }
 
-        public static bool DeleteSingleFile(string filePath)
+        public static void DeleteSingleFile(string filePath, bool bypassAcl)
         {
             ProgressTracker.Instance.LogEntry(filePath, false);
             filePath = EnsureFileName(filePath);
-            return NativeMethods.DeleteFileW(filePath);
+
+            if (bypassAcl)
+            {
+                DeleteFileBackupSemantics(filePath);
+            }
+            else
+            {
+                if (!NativeMethods.DeleteFileW(filePath))
+                {
+                    int lastError = Marshal.GetLastWin32Error();
+                    throw new Win32Exception(lastError);
+                }
+            }
         }
 
-        public static bool DeleteFolder(string folderPath)
+        /// <summary>
+        /// Deletes a file using backup semantics. This bypasses ACLs if the user
+        /// has administrative rights
+        /// </summary>
+        /// <param name="lpFileName"></param>
+        /// <returns></returns>
+        public unsafe static void DeleteFileBackupSemantics(string lpFileName)
+        {
+            var dispositionInfo = new NativeMethods.FILE_DISPOSITION_INFORMATION();
+            dispositionInfo.DeleteFile = true;
+
+            var ioStatusBlock = new NativeMethods.IO_STATUS_BLOCK();
+
+            using (SafeFileHandle fileHandle = NativeMethods.CreateFile(lpFileName,
+                NativeMethods.EFileAccess.DELETE,
+                FileShare.None,
+                IntPtr.Zero,
+                FileMode.Open,
+                (int)(NativeMethods.FileAttributes.DeleteOnClose | NativeMethods.FileAttributes.BackupSemantics),
+                IntPtr.Zero))
+            {
+                if (fileHandle.IsInvalid)
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                }
+
+                int retVal = NativeMethods.NtSetInformationFile(fileHandle, ref ioStatusBlock, new IntPtr(&dispositionInfo), Marshal.SizeOf(dispositionInfo), NativeMethods.FILE_INFORMATION_CLASS.FileDispositionInformation);
+                if (retVal != 0)
+                {
+                    throw new Win32Exception(NativeMethods.RtlNtStatusToDosError(retVal));
+                }
+            }
+        }
+
+        public static void DeleteFolder(string folderPath, bool bypassAclCheck)
         {
             var baseFolderPath = EnsureFileName(folderPath);
             var searchTerm = Path.Combine(baseFolderPath, "*");
-            NativeMethods.WIN32_FIND_DATAW findInfo;
-            IntPtr searchHandle = NativeMethods.FindFirstFileW(searchTerm, out findInfo);
-            if (searchHandle == NativeMethods.INVALID_HANDLE_VALUE)
-            {
-                return false;
-            }
 
             var directories = new List<string>();
-            do
+
+            NativeMethods.WIN32_FIND_DATAW findInfo;
+            using (NativeMethods.FindFileSafeHandle searchHandle = NativeMethods.FindFirstFileW(searchTerm, out findInfo))
             {
-                var isDirectory = ((uint)findInfo.dwFileAttributes & (uint)NativeMethods.FileAttributes.Directory) == (uint)NativeMethods.FileAttributes.Directory;
-                if (isDirectory)
+                if (searchHandle.IsInvalid)
                 {
-                    if (string.Compare(findInfo.cFileName, ".", StringComparison.InvariantCultureIgnoreCase) == 0 ||
-                        string.Compare(findInfo.cFileName, "..", StringComparison.InvariantCultureIgnoreCase) == 0)
-                    {
-                        continue;
-                    }
-
-                    var subFolderName = Path.Combine(folderPath, findInfo.cFileName);
-                    directories.Add(subFolderName);
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
                 }
-                else
-                {
-                    var fileName = Path.Combine(folderPath, findInfo.cFileName);
 
-                    var isReadonly = ((uint)findInfo.dwFileAttributes & (uint)NativeMethods.FileAttributes.Readonly) == (uint)NativeMethods.FileAttributes.Readonly;
-                    if (isReadonly)
+                do
+                {
+                    var isDirectory = ((uint)findInfo.dwFileAttributes & (uint)NativeMethods.FileAttributes.Directory) == (uint)NativeMethods.FileAttributes.Directory;
+                    if (isDirectory)
                     {
-                        var newAttributes = (uint)(findInfo.dwFileAttributes & (~NativeMethods.FileAttributes.Readonly));
-                        if (!NativeMethods.SetFileAttributesW(EnsureFileName(fileName), newAttributes))
+                        if (string.Compare(findInfo.cFileName, ".", StringComparison.InvariantCultureIgnoreCase) == 0 ||
+                            string.Compare(findInfo.cFileName, "..", StringComparison.InvariantCultureIgnoreCase) == 0)
                         {
-                            return false;
+                            continue;
                         }
-                    }
 
-                    if (!DeleteSingleFile(fileName))
+                        var subFolderName = Path.Combine(folderPath, findInfo.cFileName);
+                        directories.Add(subFolderName);
+                    }
+                    else
                     {
-                        return false;
+                        var fileName = Path.Combine(folderPath, findInfo.cFileName);
+
+                        var isReadonly = ((uint)findInfo.dwFileAttributes & (uint)NativeMethods.FileAttributes.Readonly) == (uint)NativeMethods.FileAttributes.Readonly;
+                        if (isReadonly)
+                        {
+                            var newAttributes = (uint)(findInfo.dwFileAttributes & (~NativeMethods.FileAttributes.Readonly));
+                            if (!NativeMethods.SetFileAttributesW(EnsureFileName(fileName), newAttributes))
+                            {
+                                throw new Win32Exception(Marshal.GetLastWin32Error());
+                            }
+                        }
+
+                        DeleteSingleFile(fileName, bypassAclCheck);
                     }
-                }
 
-            } while (NativeMethods.FindNextFileW(searchHandle, out findInfo));
-
-            if (!NativeMethods.FindClose(searchHandle))
-            {
-                return false;
+                } while (NativeMethods.FindNextFileW(searchHandle, out findInfo));
             }
 
             foreach (var directory in directories)
             {
-                if (!DeleteFolder(directory))
-                {
-                    return false;
-                }
+                DeleteFolder(directory, bypassAclCheck);
             }
 
             ProgressTracker.Instance.LogEntry(baseFolderPath, true);
-            return NativeMethods.RemoveDirectoryW(baseFolderPath);
+            if (!NativeMethods.RemoveDirectoryW(baseFolderPath))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
         }
 
         private static string EnsureFileName(string fileName)

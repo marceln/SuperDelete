@@ -28,10 +28,14 @@ namespace SuperDelete.Internal
             var listArgs = args.ToList();
             var result = new ParsedCmdLineArgs();
 
-            //Check if we have any silent args. If we do then remove them from the list and carry on
-            var silentArgs = listArgs.Intersect(CmdLineArgsDefinition.SilentArgsVariants);
-            result.SilentModeEnabled = silentArgs.Any();
-            listArgs.RemoveAll(a => silentArgs.Contains(a));
+            //Check if we have any args, if so, process and move on
+            var parsedArgs = listArgs.Intersect(ParsedCmdLineArgs.Args.Keys);
+            foreach(var arg in parsedArgs)
+            {
+                ParsedCmdLineArgs.Args[arg](result, arg);
+            }
+
+            listArgs.RemoveAll(a => parsedArgs.Contains(a));
 
             //We only support one extra arg for now so anything that's left over must be the folder path
             result.FileName = listArgs.FirstOrDefault();

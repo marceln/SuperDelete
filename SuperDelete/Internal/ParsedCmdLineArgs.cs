@@ -23,5 +23,17 @@ namespace SuperDelete.Internal
     {
         public bool SilentModeEnabled { get; set; }
         public string FileName { get; set; }
+
+        public bool BypassAcl { get; set;  }
+
+        /// <summary>
+        /// Defines all arguments and contains the logic to set the correct member with the value given
+        /// </summary>
+        public static readonly Dictionary<string, Action<ParsedCmdLineArgs, string>> Args = new Dictionary<string, Action<ParsedCmdLineArgs, string>>(StringComparer.InvariantCultureIgnoreCase)
+        {
+            {  "-s", (a, s) => a.SilentModeEnabled = true },
+            {  "--silentMode", (a, s) => a.SilentModeEnabled = true },
+            {  "--bypassAcl", (a, s) => a.BypassAcl = true }
+        };
     }
 }

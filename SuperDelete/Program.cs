@@ -43,13 +43,16 @@ namespace SuperDelete
                 }
             }
 
-            if (!FileDeleter.Delete(parsedArgs.FileName))
+            try
             {
-                var lastError = Marshal.GetLastWin32Error();
-                Console.WriteLine();
-                Console.WriteLine($"Error: {new Win32Exception(lastError).Message}");
+                FileDeleter.Delete(parsedArgs.FileName, parsedArgs.BypassAcl);
             }
-            else
+            catch(Exception e)
+            { 
+                Console.WriteLine();
+                Console.WriteLine($"Error: {e.Message}");
+            }
+            finally
             {
                 ProgressTracker.Instance.Stop();
             }

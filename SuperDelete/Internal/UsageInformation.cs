@@ -14,6 +14,7 @@
 
 using System;
 using System.Reflection;
+using System.Text;
 
 namespace SuperDelete.Internal
 {
@@ -29,7 +30,14 @@ namespace SuperDelete.Internal
 
             var versionLine = String.Format(Resources.VersionLine, appVersion);
             Console.WriteLine(versionLine);
-            Console.WriteLine(Resources.UsageLine);
+
+            StringBuilder args = new StringBuilder();
+            foreach(var arg in ParsedCmdLineArgs.Args.Keys)
+            {
+                args.AppendFormat("[{0}]", arg);
+            }
+
+            Console.WriteLine(Resources.UsageLine, args.ToString());
         }
     }
 }

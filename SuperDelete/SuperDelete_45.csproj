@@ -11,6 +11,7 @@
     <AssemblyName>SuperDelete</AssemblyName>
     <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <PlatformTarget>AnyCPU</PlatformTarget>
@@ -44,7 +45,6 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Internal\CmdLineArgsDefinition.cs" />
     <Compile Include="Internal\CmdLineArgsParser.cs" />
     <Compile Include="Internal\FileDeleter.cs" />
     <Compile Include="Internal\NativeMethods.cs" />
