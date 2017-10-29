@@ -72,7 +72,7 @@ namespace SuperDelete.Internal
         {
             _durationTracker.Stop();
             var duration = TimeSpan.FromMilliseconds(_durationTracker.ElapsedMilliseconds);
-            Console.Write($"\rDone. Deleted {_numberOfDeletedFiles} files and {_numberOfDeletedFolders} folders in {duration}.\t\t\t\t");
+            Console.WriteLine($"\rDone. Deleted {_numberOfDeletedFiles} files and {_numberOfDeletedFolders} folders in {duration}.\t\t\t\t");
         }
 
         #endregion

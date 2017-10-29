@@ -16,6 +16,7 @@ using Microsoft.Win32.SafeHandles;
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace SuperDelete.Internal
 {
@@ -195,26 +196,29 @@ namespace SuperDelete.Internal
             public IntPtr Information;
         }
 
-        [DllImport("kernel32.dll", SetLastError = true)]
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        public static extern uint GetFullPathNameW([MarshalAs(UnmanagedType.LPWStr)]string lpFileName, int nBufferLength, StringBuilder lpBuffer, IntPtr mustBeZero);
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool DeleteFileW([MarshalAs(UnmanagedType.LPWStr)]string lpFileName);
 
-        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         public static extern uint GetFileAttributesW([MarshalAs(UnmanagedType.LPWStr)]string lpFileName);
 
-        [DllImport("kernel32.dll")]
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         public static extern bool SetFileAttributesW([MarshalAs(UnmanagedType.LPWStr)]string lpFileName, uint dwFileAttributes);
 
-        [DllImport("kernel32.dll", CharSet = CharSet.Auto)]
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         public static extern FindFileSafeHandle FindFirstFileW([MarshalAs(UnmanagedType.LPWStr)]string lpFileName, out WIN32_FIND_DATAW lpFindFileData);
 
-        [DllImport("kernel32", CharSet = CharSet.Unicode)]
+        [DllImport("kernel32", SetLastError = true, CharSet = CharSet.Unicode)]
         public static extern bool FindNextFileW(FindFileSafeHandle hFindFile, out WIN32_FIND_DATAW lpFindFileData);
 
-        [DllImport("kernel32", CharSet = CharSet.Unicode)]
+        [DllImport("kernel32", SetLastError = true, CharSet = CharSet.Unicode)]
         public static extern bool FindClose(IntPtr hFindFile);
 
-        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         public static extern bool RemoveDirectoryW([MarshalAs(UnmanagedType.LPWStr)]string lpPathName);
 
         [DllImport("Kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]

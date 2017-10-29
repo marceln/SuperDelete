@@ -18,6 +18,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace SuperDelete
 {
@@ -32,20 +33,23 @@ namespace SuperDelete
                 return;
             }
 
-            //If silent mode is not specified
-            if (!parsedArgs.SilentModeEnabled)
-            {
-                Console.WriteLine(Resources.ConfirmationLine, parsedArgs.FileName);
-                var keyInfo = Console.ReadKey();
-                if (keyInfo.Key != ConsoleKey.Y && keyInfo.Key != ConsoleKey.Enter)
-                {
-                    return;
-                }
-            }
-
             try
             {
-                FileDeleter.Delete(parsedArgs.FileName, parsedArgs.BypassAcl);
+                // get the full path for confirmation
+                string filename = FileDeleter.GetFullPath(parsedArgs.FileName);
+
+                //If silent mode is not specified
+                if (!parsedArgs.SilentModeEnabled)
+                {
+                    Console.WriteLine(Resources.ConfirmationLine, filename);
+                    var keyInfo = Console.ReadKey();
+                    if (keyInfo.Key != ConsoleKey.Y && keyInfo.Key != ConsoleKey.Enter)
+                    {
+                        return;
+                    }
+                }
+
+                FileDeleter.Delete(filename, parsedArgs.BypassAcl);
             }
             catch(Exception e)
             { 

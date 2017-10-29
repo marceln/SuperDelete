@@ -27,6 +27,26 @@ namespace SuperDelete.Internal
     {
         private const string FileNamePrefix = "\\\\?\\";
 
+        public static string GetFullPath(string path)
+        {
+            // method does not call win32, just checks to see if the prefix is a \ or drive letter
+            if (Path.IsPathRooted(path))
+            {
+                return path;
+            }
+
+            // resolve to absolute path to avoid confusion since long filename API won't accept relative paths
+            StringBuilder fullName = new StringBuilder(32768);
+
+            if (NativeMethods.GetFullPathNameW(path, fullName.MaxCapacity, fullName, IntPtr.Zero) == 0)
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not convert relative to absolute path. Try specifying absolute path.");
+            }
+
+            return fullName.ToString();
+        }
+
+
         public static void Delete(string path, bool bypassAcl)
         {
             uint fileAttrs = NativeMethods.GetFileAttributesW(EnsureFileName(path));
