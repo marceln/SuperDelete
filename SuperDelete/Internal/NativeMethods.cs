@@ -16,6 +16,7 @@ using Microsoft.Win32.SafeHandles;
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Security.Principal;
 using System.Text;
 
 namespace SuperDelete.Internal
@@ -40,6 +41,39 @@ namespace SuperDelete.Internal
                 return true;
             }
         }
+
+        // Introduce this handle to replace internal SafeTokenHandle,
+        // which is mainly used to hold Windows thread or process access token
+        public sealed class SafeAccessTokenHandle : SafeHandle
+        {
+            private SafeAccessTokenHandle()
+                : base(IntPtr.Zero, true)
+            { }
+
+            // 0 is an Invalid Handle
+            public SafeAccessTokenHandle(IntPtr handle)
+                : base(IntPtr.Zero, true)
+            {
+                SetHandle(handle);
+            }
+
+            public static SafeAccessTokenHandle InvalidHandle
+            {
+                get { return new SafeAccessTokenHandle(IntPtr.Zero); }
+            }
+
+            public override bool IsInvalid
+            {
+                get { return handle == IntPtr.Zero || handle == new IntPtr(-1); }
+            }
+
+            protected override bool ReleaseHandle()
+            {
+                return NativeMethods.CloseHandle(handle);
+            }
+        }
+
+        public const uint SE_PRIVILEGE_ENABLED = 0x00000002;
 
         public static readonly IntPtr INVALID_HANDLE_VALUE = new IntPtr(-1);
 
@@ -196,6 +230,30 @@ namespace SuperDelete.Internal
             public IntPtr Information;
         }
 
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        public struct LUID
+        {
+            internal uint LowPart;
+            internal uint HighPart;
+        }
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        public struct LUID_AND_ATTRIBUTES
+        {
+            internal LUID Luid;
+            internal uint Attributes;
+        }
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        public struct TOKEN_PRIVILEGE
+        {
+            internal uint PrivilegeCount;
+            internal LUID_AND_ATTRIBUTES Privilege;
+        }
+
+        [DllImport("kernel32.dll")]
+        public static extern IntPtr GetCurrentProcess();
+
         [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         public static extern uint GetFullPathNameW([MarshalAs(UnmanagedType.LPWStr)]string lpFileName, int nBufferLength, StringBuilder lpBuffer, IntPtr mustBeZero);
 
@@ -231,8 +289,15 @@ namespace SuperDelete.Internal
            int flags,
            IntPtr template);
 
+        [DllImport("Kernel32.dll", SetLastError = true)]
+        extern static bool CloseHandle(IntPtr handle);
+
         [DllImport("ntdll.dll", SetLastError = false)]
         public static extern int RtlNtStatusToDosError(int Status);
+
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        public static extern bool LookupPrivilegeValue(string lpSystemName, string lpName, out LUID lpLuid);
 
         [DllImport("ntdll.dll", ExactSpelling = true, SetLastError = false)]
         public static extern int NtSetInformationFile(
@@ -241,5 +306,22 @@ namespace SuperDelete.Internal
             IntPtr FileInformation,
             Int32 Length,
             FILE_INFORMATION_CLASS fileClass);
+
+        [DllImport("ADVAPI32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        public static extern
+        bool AdjustTokenPrivileges(
+            [In]     SafeAccessTokenHandle TokenHandle,
+            [In]     bool DisableAllPrivileges,
+            [In]     ref TOKEN_PRIVILEGE NewState,
+            [In]     uint BufferLength,
+            [In]     IntPtr PreviousState,
+            [In]     IntPtr ReturnLength);
+
+        [DllImport("ADVAPI32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        public static extern
+        bool OpenProcessToken(
+            [In]     IntPtr ProcessToken,
+            [In]     TokenAccessLevels DesiredAccess,
+            [Out]    out SafeAccessTokenHandle TokenHandle);
     }
 }
