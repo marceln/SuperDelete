@@ -2,7 +2,8 @@
 
 ### About
 A Windows command-line tool that can be used to delete files and folders with very long paths (longer than MAX_PATH 260 characters). It supports paths as long as 32767 characters.
-It works by using extended-length paths and the Unicode versions of the WinApi functions for enumerating and deleting files.
+It works by using extended-length paths and the Unicode versions of the WinApi functions for enumerating and deleting files. 
+In addition, it supports bypassing ACL checks for deleting folders if the user has administrative rights on the drive.  
 
 More info about the mechanism can be found in MSDN article [Naming Files, Paths, and Namespaces](https://msdn.microsoft.com/en-us/library/windows/desktop/aa365247(v=vs.85).aspx), in section "Maximum Path Length Limitation".
 
@@ -22,6 +23,14 @@ The tool supports an additional command line argument which suppresses the confi
 
 ```
 SuperDelete.exe --silent fullPathToFileOrFolder
+```
+
+#### Bypass ACLs
+In the case where the user has administrative rights on the drive, the tool can bypass ACL checks and remove the file even if the user doesn't have rights in the ACL. 
+This is useful in cases where a drive is moved from another machine or Windows installation.
+
+```
+SuperDelete.exe --bypassAcl fullPathToFileOrFolder
 ```
 
 ### Downloads
