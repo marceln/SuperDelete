@@ -19,6 +19,8 @@ using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text;
 
 namespace SuperDelete.Internal
@@ -26,6 +28,39 @@ namespace SuperDelete.Internal
     internal class FileDeleter
     {
         private const string FileNamePrefix = "\\\\?\\";
+
+        public static void EnablePrivilege(string priv)
+        {
+            NativeMethods.LUID privLuid;
+            if (!NativeMethods.LookupPrivilegeValue(null, priv, out privLuid))
+            {
+                ThrowLastErrorException("Could not look up restore privilege {0}", priv);
+            }
+
+            NativeMethods.SafeAccessTokenHandle token;
+            if (!NativeMethods.OpenProcessToken(NativeMethods.GetCurrentProcess(), System.Security.Principal.TokenAccessLevels.AdjustPrivileges, out token))
+            {
+                ThrowLastErrorException("Could not open process token");
+            }
+
+            using (token)
+            {
+                NativeMethods.TOKEN_PRIVILEGE tokenpriv = new NativeMethods.TOKEN_PRIVILEGE();
+                tokenpriv.PrivilegeCount = 1;
+                tokenpriv.Privilege.Luid = privLuid;
+                tokenpriv.Privilege.Attributes = NativeMethods.SE_PRIVILEGE_ENABLED;
+                if (!NativeMethods.AdjustTokenPrivileges(token, false, ref tokenpriv, 0, IntPtr.Zero, IntPtr.Zero))
+                {
+                    ThrowLastErrorException("Could not not adjust token for privilege {0}", priv);
+                }
+
+                int lastError = Marshal.GetLastWin32Error();
+                if (lastError != 0)
+                {
+                    ThrowLastErrorException("Could not not enable token for privilege {0}. Are you running as Administrator?", priv);
+                }
+            }
+        }
 
         public static string GetFullPath(string path)
         {
@@ -40,7 +75,7 @@ namespace SuperDelete.Internal
 
             if (NativeMethods.GetFullPathNameW(path, fullName.MaxCapacity, fullName, IntPtr.Zero) == 0)
             {
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not convert relative to absolute path. Try specifying absolute path.");
+                ThrowLastErrorException("Could not convert relative to absolute path. Try specifying absolute path. {0} ", path);
             }
 
             return fullName.ToString();
@@ -52,7 +87,7 @@ namespace SuperDelete.Internal
             uint fileAttrs = NativeMethods.GetFileAttributesW(EnsureFileName(path));
             if ((fileAttrs & (uint)FileAttributes.Directory) == (uint)FileAttributes.Directory)
             {
-                DeleteFolder(path, bypassAcl);
+                DeleteFolder(path, bypassAcl, 0);
             }
             else
             {
@@ -73,8 +108,7 @@ namespace SuperDelete.Internal
             {
                 if (!NativeMethods.DeleteFileW(filePath))
                 {
-                    int lastError = Marshal.GetLastWin32Error();
-                    throw new Win32Exception(lastError);
+                    ThrowLastErrorException("Attempting delete file {0} ", filePath);
                 }
             }
         }
@@ -87,11 +121,6 @@ namespace SuperDelete.Internal
         /// <returns></returns>
         public unsafe static void DeleteFileBackupSemantics(string lpFileName)
         {
-            var dispositionInfo = new NativeMethods.FILE_DISPOSITION_INFORMATION();
-            dispositionInfo.DeleteFile = true;
-
-            var ioStatusBlock = new NativeMethods.IO_STATUS_BLOCK();
-
             using (SafeFileHandle fileHandle = NativeMethods.CreateFile(lpFileName,
                 NativeMethods.EFileAccess.DELETE,
                 FileShare.None,
@@ -102,36 +131,69 @@ namespace SuperDelete.Internal
             {
                 if (fileHandle.IsInvalid)
                 {
-                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                    ThrowLastErrorException("Attempting open file {0} with backup semantics", lpFileName);
                 }
 
+                var dispositionInfo = new NativeMethods.FILE_DISPOSITION_INFORMATION();
+                dispositionInfo.DeleteFile = true;
+
+                var ioStatusBlock = new NativeMethods.IO_STATUS_BLOCK();
                 int retVal = NativeMethods.NtSetInformationFile(fileHandle, ref ioStatusBlock, new IntPtr(&dispositionInfo), Marshal.SizeOf(dispositionInfo), NativeMethods.FILE_INFORMATION_CLASS.FileDispositionInformation);
                 if (retVal != 0)
                 {
-                    throw new Win32Exception(NativeMethods.RtlNtStatusToDosError(retVal));
+                    ThrowLastErrorException(NativeMethods.RtlNtStatusToDosError(retVal), "Couldn't set delete disposition on {0}", lpFileName);
                 }
             }
         }
 
-        public static void DeleteFolder(string folderPath, bool bypassAclCheck)
+        private static unsafe void RemoveReadonlyAttribute(string filename, NativeMethods.FileAttributes currentAttributes)
+        {
+            NativeMethods.FileAttributes attributesToRemove = NativeMethods.FileAttributes.Readonly;
+
+            if (((uint)currentAttributes & (uint)attributesToRemove) != 0)
+            {
+                var newAttributes = (uint)(currentAttributes & (~attributesToRemove));
+
+                if (!NativeMethods.SetFileAttributesW(EnsureFileName(filename), newAttributes))
+                {
+                    ThrowLastErrorException("Attempting to remove {0} attribute on {1}",  (currentAttributes & attributesToRemove), filename);
+                }
+            }
+        }
+
+        public static void DeleteFolder(string folderPath, bool bypassAclCheck, NativeMethods.FileAttributes parentAttributes)
         {
             var baseFolderPath = EnsureFileName(folderPath);
             var searchTerm = Path.Combine(baseFolderPath, "*");
 
-            var directories = new List<string>();
+            var directories = new List<KeyValuePair<string, NativeMethods.FileAttributes>>();
 
             NativeMethods.WIN32_FIND_DATAW findInfo;
-            using (NativeMethods.FindFileSafeHandle searchHandle = NativeMethods.FindFirstFileW(searchTerm, out findInfo))
+            NativeMethods.FindFileSafeHandle searchHandle = NativeMethods.FindFirstFileW(searchTerm, out findInfo);
+            if (searchHandle.IsInvalid)
             {
-                if (searchHandle.IsInvalid)
-                {
-                    throw new Win32Exception(Marshal.GetLastWin32Error());
-                }
+                ThrowLastErrorException("Error locating files in {0}", searchTerm);
+            }
 
+            using (searchHandle)
+            { 
                 do
                 {
                     var isDirectory = ((uint)findInfo.dwFileAttributes & (uint)NativeMethods.FileAttributes.Directory) == (uint)NativeMethods.FileAttributes.Directory;
-                    if (isDirectory)
+                    var fullFilePath = Path.Combine(folderPath, findInfo.cFileName);
+
+                    if ((findInfo.dwFileAttributes & NativeMethods.FileAttributes.ReparsePoint) != 0)
+                    {
+                        // reparse points can be removed directly. If we attempt to follow down into the reprase
+                        // point, then we start getting weird error messages when unexpected files get deleted
+                        // or permissions cannot be obtained.
+
+                        if (!NativeMethods.RemoveDirectoryW(fullFilePath))
+                        {
+                            ThrowLastErrorException("Attempting to remove reparse point {0}", fullFilePath);
+                        }
+                    }
+                    else if (isDirectory)
                     {
                         if (string.Compare(findInfo.cFileName, ".", StringComparison.InvariantCultureIgnoreCase) == 0 ||
                             string.Compare(findInfo.cFileName, "..", StringComparison.InvariantCultureIgnoreCase) == 0)
@@ -139,24 +201,13 @@ namespace SuperDelete.Internal
                             continue;
                         }
 
-                        var subFolderName = Path.Combine(folderPath, findInfo.cFileName);
-                        directories.Add(subFolderName);
+                        directories.Add(new KeyValuePair<string, NativeMethods.FileAttributes>(fullFilePath, findInfo.dwFileAttributes));
                     }
                     else
                     {
-                        var fileName = Path.Combine(folderPath, findInfo.cFileName);
+                        RemoveReadonlyAttribute(fullFilePath, findInfo.dwFileAttributes);
 
-                        var isReadonly = ((uint)findInfo.dwFileAttributes & (uint)NativeMethods.FileAttributes.Readonly) == (uint)NativeMethods.FileAttributes.Readonly;
-                        if (isReadonly)
-                        {
-                            var newAttributes = (uint)(findInfo.dwFileAttributes & (~NativeMethods.FileAttributes.Readonly));
-                            if (!NativeMethods.SetFileAttributesW(EnsureFileName(fileName), newAttributes))
-                            {
-                                throw new Win32Exception(Marshal.GetLastWin32Error());
-                            }
-                        }
-
-                        DeleteSingleFile(fileName, bypassAclCheck);
+                        DeleteSingleFile(fullFilePath, bypassAclCheck);
                     }
 
                 } while (NativeMethods.FindNextFileW(searchHandle, out findInfo));
@@ -164,14 +215,27 @@ namespace SuperDelete.Internal
 
             foreach (var directory in directories)
             {
-                DeleteFolder(directory, bypassAclCheck);
+                RemoveReadonlyAttribute(directory.Key, directory.Value);
+                DeleteFolder(directory.Key, bypassAclCheck, directory.Value);
             }
 
             ProgressTracker.Instance.LogEntry(baseFolderPath, true);
             if (!NativeMethods.RemoveDirectoryW(baseFolderPath))
             {
-                throw new Win32Exception(Marshal.GetLastWin32Error());
+                ThrowLastErrorException("Attempting to remove directory {0}", baseFolderPath);
             }
+        }
+
+        private static void ThrowLastErrorException(string message, params object[] args)
+        {
+            ThrowLastErrorException(Marshal.GetLastWin32Error(), message, args);
+        }
+
+        private static void ThrowLastErrorException(int error, string message, params object[] args)
+        {
+            string errorMessage = new Win32Exception(error).Message;
+
+            throw new Win32Exception(error, errorMessage + " " + string.Format(message, args));
         }
 
         private static string EnsureFileName(string fileName)

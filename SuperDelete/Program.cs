@@ -38,35 +38,10 @@ namespace SuperDelete
                 // enable restore privilege so that we can bypass the ACLs and nuke files
                 if (parsedArgs.BypassAcl)
                 {
-                    NativeMethods.LUID backupLuid;
-                    if (!NativeMethods.LookupPrivilegeValue(null, "SeRestorePrivilege", out backupLuid))
-                    {
-                        throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not look up backup privilege");
-                    }
-
-                    NativeMethods.SafeAccessTokenHandle token;
-                    if (!NativeMethods.OpenProcessToken(NativeMethods.GetCurrentProcess(), System.Security.Principal.TokenAccessLevels.AdjustPrivileges, out token))
-                    {
-                        throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not open process token");
-                    }
-
-                    using (token)
-                    {
-                        NativeMethods.TOKEN_PRIVILEGE priv = new NativeMethods.TOKEN_PRIVILEGE();
-                        priv.PrivilegeCount = 1;
-                        priv.Privilege.Luid = backupLuid;
-                        priv.Privilege.Attributes = NativeMethods.SE_PRIVILEGE_ENABLED;
-                        if (!NativeMethods.AdjustTokenPrivileges(token, false, ref priv, 0, IntPtr.Zero, IntPtr.Zero))
-                        {
-                            throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not adjust token");
-                        }
-
-                        int lastError = Marshal.GetLastWin32Error();
-                        if (lastError != 0)
-                        {
-                            throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not enable SeRestorePrivilege on process token. Are you running as Admin?");
-                        }
-                    }
+                    FileDeleter.EnablePrivilege("SeBackupPrivilege");
+                    FileDeleter.EnablePrivilege("SeRestorePrivilege");
+                    FileDeleter.EnablePrivilege("SeTakeOwnershipPrivilege");
+                    FileDeleter.EnablePrivilege("SeSecurityPrivilege");
                 }
 
                 // get the full path for confirmation
