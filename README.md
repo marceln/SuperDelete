@@ -33,6 +33,13 @@ This is useful in cases where a drive is moved from another machine or Windows i
 SuperDelete.exe --bypassAcl fullPathToFileOrFolder
 ```
 
+#### Printing stack trace
+If there is an exception, this will print the callstack where the exception occurred. This is mostly useful for debugging.
+
+```
+SuperDelete.exe --printStackTrace fullPathToFileOrFolder
+```
+
 ### Downloads
 
-The latest release is SuperDelete 1.1.0 and you can get it from the [Releases](https://github.com/marceln/SuperDelete/releases) page. 
+The latest release is SuperDelete 1.2.0 and you can get it from the [Releases](https://github.com/marceln/SuperDelete/releases) page. 
