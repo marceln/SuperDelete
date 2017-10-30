@@ -18,6 +18,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace SuperDelete
 {
@@ -25,31 +26,49 @@ namespace SuperDelete
     {
         public static void Main(string[] args)
         {
-            var parsedArgs = CmdLineArgsParser.Parse(args);
-            if (!args.Any() || string.IsNullOrEmpty(parsedArgs.FileName))
+            ParsedCmdLineArgs parsedArgs;
+            try
             {
-                UsageInformation.Print();
+                parsedArgs = CmdLineArgsParser.Parse(args);
+            }
+            catch (CmdLineArgsParser.InvalidCmdLineException e)
+            {
+                CmdLineArgsParser.PrintUsage(e);
                 return;
             }
 
-            //If silent mode is not specified
-            if (!parsedArgs.SilentModeEnabled)
-            {
-                Console.WriteLine(Resources.ConfirmationLine, parsedArgs.FileName);
-                var keyInfo = Console.ReadKey();
-                if (keyInfo.Key != ConsoleKey.Y && keyInfo.Key != ConsoleKey.Enter)
+            try
+            { 
+                // get the full path for confirmation
+                string filename = FileDeleter.GetFullPath(parsedArgs.FileName);
+
+                //If silent mode is not specified
+                if (!parsedArgs.SilentModeEnabled)
                 {
-                    return;
+                    Console.WriteLine(Resources.ConfirmationLine, filename);
+                    var keyInfo = Console.ReadKey();
+                    if (keyInfo.Key != ConsoleKey.Y && keyInfo.Key != ConsoleKey.Enter)
+                    {
+                        return;
+                    }
+                }
+
+                FileDeleter.Delete(filename, parsedArgs.BypassAcl);
+            }
+            catch (Exception e)
+            { 
+                Console.WriteLine();
+
+                if (parsedArgs.PrintStackTrace)
+                {
+                    Console.WriteLine($"Error: {e.ToString()}");
+                }
+                else
+                {
+                    Console.WriteLine($"Error: {e.Message}");
                 }
             }
-
-            if (!FileDeleter.Delete(parsedArgs.FileName))
-            {
-                var lastError = Marshal.GetLastWin32Error();
-                Console.WriteLine();
-                Console.WriteLine($"Error: {new Win32Exception(lastError).Message}");
-            }
-            else
+            finally
             {
                 ProgressTracker.Instance.Stop();
             }
