@@ -120,8 +120,17 @@
   <data name="ConfirmationLine" xml:space="preserve">
     <value>Are you sure you want to delete file/folder at path {0}? (Y/n)</value>
   </data>
+  <data name="InvalidSwitchError" xml:space="preserve">
+    <value>Invalid switch {0}</value>
+  </data>
+  <data name="NoFilenamesSpecified" xml:space="preserve">
+    <value>No file/directory specified</value>
+  </data>
+  <data name="TooManyFilenamesError" xml:space="preserve">
+    <value>Too many filenames specified</value>
+  </data>
   <data name="UsageLine" xml:space="preserve">
-    <value>Usage: SuperDelete.exe {0} fullFileOrFolderPath.</value>
+    <value>Error: {0} Usage: SuperDelete.exe {1} &lt;file or folder path&gt;</value>
   </data>
   <data name="VersionLine" xml:space="preserve">
     <value>SuperDelete version {0}.</value>

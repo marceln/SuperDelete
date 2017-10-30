@@ -26,24 +26,19 @@ namespace SuperDelete
     {
         public static void Main(string[] args)
         {
-            var parsedArgs = CmdLineArgsParser.Parse(args);
-            if (!args.Any() || string.IsNullOrEmpty(parsedArgs.FileName))
+            ParsedCmdLineArgs parsedArgs;
+            try
             {
-                UsageInformation.Print();
+                parsedArgs = CmdLineArgsParser.Parse(args);
+            }
+            catch (CmdLineArgsParser.InvalidCmdLineException e)
+            {
+                CmdLineArgsParser.PrintUsage(e);
                 return;
             }
 
             try
-            {
-                // enable restore privilege so that we can bypass the ACLs and nuke files
-                if (parsedArgs.BypassAcl)
-                {
-                    FileDeleter.EnablePrivilege("SeBackupPrivilege");
-                    FileDeleter.EnablePrivilege("SeRestorePrivilege");
-                    FileDeleter.EnablePrivilege("SeTakeOwnershipPrivilege");
-                    FileDeleter.EnablePrivilege("SeSecurityPrivilege");
-                }
-
+            { 
                 // get the full path for confirmation
                 string filename = FileDeleter.GetFullPath(parsedArgs.FileName);
 
@@ -60,10 +55,18 @@ namespace SuperDelete
 
                 FileDeleter.Delete(filename, parsedArgs.BypassAcl);
             }
-            catch(Exception e)
+            catch (Exception e)
             { 
                 Console.WriteLine();
-                Console.WriteLine($"Error: {e.ToString()}");
+
+                if (parsedArgs.PrintStackTrace)
+                {
+                    Console.WriteLine($"Error: {e.ToString()}");
+                }
+                else
+                {
+                    Console.WriteLine($"Error: {e.Message}");
+                }
             }
             finally
             {

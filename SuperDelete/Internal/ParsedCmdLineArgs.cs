@@ -26,14 +26,17 @@ namespace SuperDelete.Internal
 
         public bool BypassAcl { get; set;  }
 
+        public bool PrintStackTrace { get; set; }
+
         /// <summary>
         /// Defines all arguments and contains the logic to set the correct member with the value given
         /// </summary>
-        public static readonly Dictionary<string, Action<ParsedCmdLineArgs, string>> Args = new Dictionary<string, Action<ParsedCmdLineArgs, string>>(StringComparer.InvariantCultureIgnoreCase)
+        public static readonly Dictionary<string, Action<ParsedCmdLineArgs>> Args = new Dictionary<string, Action<ParsedCmdLineArgs>>(StringComparer.InvariantCultureIgnoreCase)
         {
-            {  "-s", (a, s) => a.SilentModeEnabled = true },
-            {  "--silentMode", (a, s) => a.SilentModeEnabled = true },
-            {  "--bypassAcl", (a, s) => a.BypassAcl = true }
+            {  "-s", (a) => a.SilentModeEnabled = true },
+            {  "--silentMode", (a) => a.SilentModeEnabled = true },
+            {  "--bypassAcl", (a) => a.BypassAcl = true },
+            {  "--printStackTrace", (a) => a.PrintStackTrace = true }
         };
     }
 }

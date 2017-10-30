@@ -70,7 +70,34 @@ namespace SuperDelete {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Usage: SuperDelete.exe {0} fullFileOrFolderPath..
+        ///   Looks up a localized string similar to Invalid switch {0}.
+        /// </summary>
+        internal static string InvalidSwitchError {
+            get {
+                return ResourceManager.GetString("InvalidSwitchError", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to No file/directory specified.
+        /// </summary>
+        internal static string NoFilenamesSpecified {
+            get {
+                return ResourceManager.GetString("NoFilenamesSpecified", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Too many filenames specified.
+        /// </summary>
+        internal static string TooManyFilenamesError {
+            get {
+                return ResourceManager.GetString("TooManyFilenamesError", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Error: {0} Usage: SuperDelete.exe {1} &lt;file or folder path&gt;.
         /// </summary>
         internal static string UsageLine {
             get {

@@ -12,16 +12,14 @@
 //See the License for the specific language governing permissions and
 //limitations under the License.
 
-using Microsoft.Win32.SafeHandles;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
-using System.Linq;
 using System.Runtime.InteropServices;
-using System.Security.AccessControl;
-using System.Security.Principal;
 using System.Text;
+
+using Microsoft.Win32.SafeHandles;
 
 namespace SuperDelete.Internal
 {
@@ -29,12 +27,69 @@ namespace SuperDelete.Internal
     {
         private const string FileNamePrefix = "\\\\?\\";
 
-        public static void EnablePrivilege(string priv)
+        private class DirectoryWithAttributes
+        {
+            public string Directory;
+            public NativeMethods.FileAttributes Attributes;
+        }
+
+        public static string GetFullPath(string path)
+        {
+            // check to see if this is an absolute path, if so, we don't need to do anything
+            // starts with \\blahblah or is in the form x:\blahblah
+            if (path.StartsWith(@"\\") || (path.Length >= 3 && path.Substring(1,2) == @":\"))
+            {
+                return path;
+            }
+
+            // resolve to absolute path to avoid confusion since long filename API won't accept relative paths
+            StringBuilder fullName = new StringBuilder(32768);
+
+            if (NativeMethods.GetFullPathNameW(path, fullName.MaxCapacity, fullName, IntPtr.Zero) == 0)
+            {
+                ThrowLastErrorException("Could not convert relative to absolute path. Try specifying absolute path. {0} ", path);
+            }
+
+            return fullName.ToString();
+        }
+
+        /// <summary>
+        /// Deletes the specified directory or filename
+        /// </summary>
+        /// <param name="path">Path to delete</param>
+        /// <param name="bypassAcl">If we should bypass ACLs</param>
+        public static void Delete(string path, bool bypassAcl)
+        {
+            // bypassing ACLs requires first to enable these privileges. If you are not an admin, you'll get an error here
+            if (bypassAcl)
+            {
+                EnablePrivilege("SeBackupPrivilege");
+                EnablePrivilege("SeRestorePrivilege");
+                EnablePrivilege("SeTakeOwnershipPrivilege");
+                EnablePrivilege("SeSecurityPrivilege");
+            }
+
+            uint fileAttrs = NativeMethods.GetFileAttributesW(EnsureFileName(path));
+            if ((fileAttrs & (uint)FileAttributes.Directory) == (uint)FileAttributes.Directory)
+            {
+                DeleteFolder(path, bypassAcl, 0);
+            }
+            else
+            {
+                DeleteSingleFile(path, bypassAcl);
+            }
+        }
+
+        /// <summary>
+        /// Enables a specified privilege. Required to perform certain administrative actions in Windows.
+        /// </summary>
+        /// <param name="priv">Name of the privilege</param>
+        private static void EnablePrivilege(string priv)
         {
             NativeMethods.LUID privLuid;
             if (!NativeMethods.LookupPrivilegeValue(null, priv, out privLuid))
             {
-                ThrowLastErrorException("Could not look up restore privilege {0}", priv);
+                ThrowLastErrorException("Could not look up privilege {0}", priv);
             }
 
             NativeMethods.SafeAccessTokenHandle token;
@@ -62,40 +117,7 @@ namespace SuperDelete.Internal
             }
         }
 
-        public static string GetFullPath(string path)
-        {
-            // method does not call win32, just checks to see if the prefix is a \ or drive letter
-            if (Path.IsPathRooted(path))
-            {
-                return path;
-            }
-
-            // resolve to absolute path to avoid confusion since long filename API won't accept relative paths
-            StringBuilder fullName = new StringBuilder(32768);
-
-            if (NativeMethods.GetFullPathNameW(path, fullName.MaxCapacity, fullName, IntPtr.Zero) == 0)
-            {
-                ThrowLastErrorException("Could not convert relative to absolute path. Try specifying absolute path. {0} ", path);
-            }
-
-            return fullName.ToString();
-        }
-
-
-        public static void Delete(string path, bool bypassAcl)
-        {
-            uint fileAttrs = NativeMethods.GetFileAttributesW(EnsureFileName(path));
-            if ((fileAttrs & (uint)FileAttributes.Directory) == (uint)FileAttributes.Directory)
-            {
-                DeleteFolder(path, bypassAcl, 0);
-            }
-            else
-            {
-                DeleteSingleFile(path, bypassAcl);
-            }
-        }
-
-        public static void DeleteSingleFile(string filePath, bool bypassAcl)
+        private static void DeleteSingleFile(string filePath, bool bypassAcl)
         {
             ProgressTracker.Instance.LogEntry(filePath, false);
             filePath = EnsureFileName(filePath);
@@ -108,7 +130,7 @@ namespace SuperDelete.Internal
             {
                 if (!NativeMethods.DeleteFileW(filePath))
                 {
-                    ThrowLastErrorException("Attempting delete file {0} ", filePath);
+                    ThrowLastErrorException("Failed to delete file {0}", filePath);
                 }
             }
         }
@@ -119,7 +141,7 @@ namespace SuperDelete.Internal
         /// </summary>
         /// <param name="lpFileName"></param>
         /// <returns></returns>
-        public unsafe static void DeleteFileBackupSemantics(string lpFileName)
+        private unsafe static void DeleteFileBackupSemantics(string lpFileName)
         {
             using (SafeFileHandle fileHandle = NativeMethods.CreateFile(lpFileName,
                 NativeMethods.EFileAccess.DELETE,
@@ -131,7 +153,7 @@ namespace SuperDelete.Internal
             {
                 if (fileHandle.IsInvalid)
                 {
-                    ThrowLastErrorException("Attempting open file {0} with backup semantics", lpFileName);
+                    ThrowLastErrorException("Failed attempting open file {0} with backup semantics", lpFileName);
                 }
 
                 var dispositionInfo = new NativeMethods.FILE_DISPOSITION_INFORMATION();
@@ -146,27 +168,12 @@ namespace SuperDelete.Internal
             }
         }
 
-        private static unsafe void RemoveReadonlyAttribute(string filename, NativeMethods.FileAttributes currentAttributes)
-        {
-            NativeMethods.FileAttributes attributesToRemove = NativeMethods.FileAttributes.Readonly;
-
-            if (((uint)currentAttributes & (uint)attributesToRemove) != 0)
-            {
-                var newAttributes = (uint)(currentAttributes & (~attributesToRemove));
-
-                if (!NativeMethods.SetFileAttributesW(EnsureFileName(filename), newAttributes))
-                {
-                    ThrowLastErrorException("Attempting to remove {0} attribute on {1}",  (currentAttributes & attributesToRemove), filename);
-                }
-            }
-        }
-
-        public static void DeleteFolder(string folderPath, bool bypassAclCheck, NativeMethods.FileAttributes parentAttributes)
+        private static void DeleteFolder(string folderPath, bool bypassAclCheck, NativeMethods.FileAttributes parentAttributes)
         {
             var baseFolderPath = EnsureFileName(folderPath);
             var searchTerm = Path.Combine(baseFolderPath, "*");
 
-            var directories = new List<KeyValuePair<string, NativeMethods.FileAttributes>>();
+            var directories = new List<DirectoryWithAttributes>();
 
             NativeMethods.WIN32_FIND_DATAW findInfo;
             NativeMethods.FindFileSafeHandle searchHandle = NativeMethods.FindFirstFileW(searchTerm, out findInfo);
@@ -176,7 +183,7 @@ namespace SuperDelete.Internal
             }
 
             using (searchHandle)
-            { 
+            {
                 do
                 {
                     var isDirectory = ((uint)findInfo.dwFileAttributes & (uint)NativeMethods.FileAttributes.Directory) == (uint)NativeMethods.FileAttributes.Directory;
@@ -190,7 +197,7 @@ namespace SuperDelete.Internal
 
                         if (!NativeMethods.RemoveDirectoryW(fullFilePath))
                         {
-                            ThrowLastErrorException("Attempting to remove reparse point {0}", fullFilePath);
+                            ThrowLastErrorException("Failed to remove reparse point {0}", fullFilePath);
                         }
                     }
                     else if (isDirectory)
@@ -201,7 +208,7 @@ namespace SuperDelete.Internal
                             continue;
                         }
 
-                        directories.Add(new KeyValuePair<string, NativeMethods.FileAttributes>(fullFilePath, findInfo.dwFileAttributes));
+                        directories.Add(new DirectoryWithAttributes { Directory = fullFilePath, Attributes = findInfo.dwFileAttributes });
                     }
                     else
                     {
@@ -215,14 +222,35 @@ namespace SuperDelete.Internal
 
             foreach (var directory in directories)
             {
-                RemoveReadonlyAttribute(directory.Key, directory.Value);
-                DeleteFolder(directory.Key, bypassAclCheck, directory.Value);
+                RemoveReadonlyAttribute(directory.Directory, directory.Attributes);
+
+                DeleteFolder(directory.Directory, bypassAclCheck, directory.Attributes);
             }
 
             ProgressTracker.Instance.LogEntry(baseFolderPath, true);
             if (!NativeMethods.RemoveDirectoryW(baseFolderPath))
             {
-                ThrowLastErrorException("Attempting to remove directory {0}", baseFolderPath);
+                ThrowLastErrorException("Failed to remove directory {0}", baseFolderPath);
+            }
+        }
+
+        /// <summary>
+        /// Removes read only attribute from file or directory if it has one
+        /// </summary>
+        /// <param name="filename"></param>
+        /// <param name="currentAttributes"></param>
+        private static unsafe void RemoveReadonlyAttribute(string filename, NativeMethods.FileAttributes currentAttributes)
+        {
+            NativeMethods.FileAttributes attributesToRemove = NativeMethods.FileAttributes.Readonly;
+
+            if (((uint)currentAttributes & (uint)attributesToRemove) != 0)
+            {
+                var newAttributes = (uint)(currentAttributes & (~attributesToRemove));
+
+                if (!NativeMethods.SetFileAttributesW(EnsureFileName(filename), newAttributes))
+                {
+                    ThrowLastErrorException("Failed to remove {0} attribute on {1}", (currentAttributes & attributesToRemove), filename);
+                }
             }
         }
 
@@ -235,7 +263,7 @@ namespace SuperDelete.Internal
         {
             string errorMessage = new Win32Exception(error).Message;
 
-            throw new Win32Exception(error, errorMessage + " " + string.Format(message, args));
+            throw new Win32Exception(error, errorMessage + ". " + string.Format(message, args));
         }
 
         private static string EnsureFileName(string fileName)

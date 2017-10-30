@@ -50,7 +50,6 @@
     <Compile Include="Internal\NativeMethods.cs" />
     <Compile Include="Internal\ParsedCmdLineArgs.cs" />
     <Compile Include="Internal\ProgressTracker.cs" />
-    <Compile Include="Internal\UsageInformation.cs" />
     <Compile Include="Internal\Utils.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
